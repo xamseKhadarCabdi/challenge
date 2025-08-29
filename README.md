@@ -1,119 +1,194 @@
-# Zifala Full Stack Challenge
+# Zifala Full Stack Challenge – Country Distances App
 
-Build a small app end to end. Use AI tools if you like. Own the result.
+## Overview
 
-## Goal
+This application computes all **unique country pairs** sorted by the shortest distance between their capitals, based on a dataset of countries with latitude and longitude.
 
-Given a list of countries, return all unique country pairs sorted by the
-shortest distance between their capitals, from shortest to longest.
+* **Backend**: Laravel 10
+* **Frontend**: Blade + JavaScript (Axios for API calls)
+* **Live updates**: SSE (Server-Sent Events)
+* **Data source**: `storage/app/data/countries.json`
 
-Example input:
-["SO", "KE", "ET", "DJ"]
+---
 
-Example pair in output:
-["DJ", "SO"] -> 1165.4 km
+## 1️⃣ Backend / API
 
-## Scope
+### Dataset
 
-You will deliver:
-1) API, 2) Frontend, 3) Deployment, 4) Tests, 5) Live updates.
+* Stored in `countries.json` (ISO2, ISO3, name, capital, lat, lon)
+  Example record:
 
-### 1) API
+```json
+{
+  "iso2": "SO",
+  "iso3": "SOM",
+  "name": "Somalia",
+  "capital": "Mogadishu",
+  "lat": 2.0469,
+  "lon": 45.3182
+}
+```
 
-- Tech: any modern stack.
-- Dataset: include a local JSON file of capitals with lat and lon.
-  - Key by ISO 3166 alpha-2 or alpha-3, include the country name.
-  - Example record:
-    ```json
-    {"iso2":"SO","name":"Somalia","capital":"Mogadishu","lat":2.0469,"lon":45.3182}
-    ```
-- Endpoints:
-  - `GET /api/countries`  
-    Returns the list from your dataset.
-  - `POST /api/distances`  
-    Body: `{"countries":["SO","KE","ET","DJ"]}`
-    Behavior:
-      - Validate codes against the dataset.
-      - Compute great-circle distances using the Haversine formula.
-      - Generate all unique pairs. n countries -> n*(n-1)/2 pairs.
-      - Return pairs sorted ascending by kilometers.
-    Response:
-    ```json
-    {
-      "pairs": [
-        {"a":"DJ","b":"SO","km":1165.4},
-        {"a":"KE","b":"SO","km":1374.9}
-      ],
-      "count": 6,
-      "unit": "km"
-    }
-    ```
-  - Live updates: use **SSE** or **WebSockets**.
-    - Stream progress as pairs complete.
-    - Message format:
-      ```json
-      {"done": 10, "total": 6, "latest": {"a":"DJ","b":"SO","km":1165.4}}
-      ```
-    - SSE is preferred for Vercel free plans.
+### Routes / Endpoints
 
-- Performance:
-  - Target up to 250 countries, about 31,125 pairs.
-  - Complexity is O(n²). Use simple batching to stream results.
+#### **Admin UI / CRUD**
 
-### 2) Frontend
+* `GET /country-distances` – Shows the admin page with existing distance records
+* `POST /country-distances/create` – Create a new record, validate ISO codes, compute/cached pairs
+* `POST /country-distances/getSingle` – Get a single record by ID
+* `POST /country-distances/delete` – Delete a record
+* `GET /country-distances/getPairs/{id}` – Get computed pairs for a record (JSON)
+* `GET /country-distances/top20` – Returns top 20 shortest pairs across all dataset
+* `POST /country-distances/export` – Export selected countries as Excel
+* `POST /country-distances/import` – Import countries from Excel/CSV (**also updates map view**)
+* `GET /country-distances/sample` – Download a sample template Excel
+* `POST /country-distances/exportCsv` – Export all computed pairs as CSV
+* `POST /country-distances/exportTop20` – Export top 20 pairs as CSV
+* `GET /country-distances/stream/{id}` – SSE stream of a record’s computed pairs
 
-- Any modern framework. React, Svelte, Vue, or Solid.
-- Features:
-  - Search and select countries from `GET /api/countries`.
-  - Submit to `POST /api/distances`.
-  - Show a live progress bar fed by SSE or sockets.
-  - Render a sortable table of pairs. Columns: A, B, km.
-  - Button to download results as CSV.
+#### **Challenge API**
 
-### 3) Deployment
+* `GET /api/countries` – Returns full dataset
+* `POST /api/distances`
 
-- Deploy to a free platform. Vercel is preferred.
-- Provide one public URL for the app.
-- Provide a second URL for the API base if separate.
+  * **Body**: `{"countries":["SO","KE","ET","DJ"]}`
+  * Validates codes, computes unique pairs, caches results for repeated requests
+  * Returns JSON:
 
-### 4) Tests
+```json
+{
+  "pairs": [
+    {"a":"DJ","b":"SO","km":1165.4},
+    {"a":"KE","b":"SO","km":1374.9}
+  ],
+  "count": 6,
+  "unit": "km",
+  "id": 1
+}
+```
 
-- Add unit tests for the Haversine function.
-- Add an API test for input validation and sorting.
-- Add a small integration test that covers 4 countries.
+* SSE-compatible: `/api/distances/{id}/stream` streams each pair progressively.
 
-### 5) Docs
+---
 
-- `README` must include:
-  - How to run locally.
-  - How to run tests.
-  - Design notes. Data source choice, decisions, and limits.
-  - Where you used AI, and why.
-  - Time complexity analysis.
+## 2️⃣ Key Features
 
-## Bonus
+### Pair Computation
 
-- Map view with lines between capitals for the top 20 shortest pairs.
-- GitHub Actions CI for tests on each push.
-- CSV upload of custom country lists with coordinates.
-- Caching repeated requests by set membership hash.
+* **Haversine formula** for great-circle distance
+* Generates **all unique pairs** (n → n\*(n-1)/2)
+* Sorted ascending by kilometers
+* Cached by **set-membership hash** (`SHA256` of sorted ISO codes) for repeated queries
 
-## Submission
+### Admin Blade UI
 
-- Fork this repo.  
-- Implement the app in your fork.  
-- Open a Pull Request (PR) to this repo with your solution.  
-- Include the live deployment URL in your PR description.
+* Displays list of distance records
+* Buttons for: Update, Delete, Show Map (top 20 shortest pairs)
+* Status badges: `Pending`, `Processing`, `Completed`
+
+### Excel & CSV Support
+
+* Export selected countries (`.xlsx`)
+* Export all pairs (`.csv`)
+* Export top 20 shortest pairs (`.csv`)
+* Sample template for importing countries
+* **CSV upload** also triggers map view display for uploaded countries
+
+### Import Countries
+
+* Validates uploaded Excel/CSV
+* Skips duplicates
+* Auto-generates `CountryDistance` records on successful import
+* Rollback if fewer than 2 valid countries
+
+### Live Streaming (SSE)
+
+* Streams pair-by-pair computation for frontend progress bar
+* Includes `a`, `b`, `km`, `a_lat`, `a_lon`, `b_lat`, `b_lon`
+* Usable for admin UI or API clients
+
+---
+
+## 3️⃣ Frontend Features
+
+* Select countries and submit request
+* Live progress bar fed by SSE
+* Table of results, sortable by distance
+* Export table as CSV or Excel
+* Map view for top 20 shortest pairs (**also for CSV uploads**)
+
+---
+
+## 4️⃣ Performance & Complexity
+
+* Pair computation: **O(n²)**
+* Sorting pairs: **O(n² log n²)** ≈ **O(n² log n)**
+* SSE streams results progressively to avoid UI blocking
+* Caching repeated requests improves performance significantly
+
+---
+
+## 5️⃣ Running Locally
+
+```bash
+git clone <repo>
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+php artisan serve
+```
+
+Frontend: access via Blade views (`/country-distances`)
+
+---
+
+## 6️⃣ Running Tests
+
+```bash
+vendor/bin/phpunit
+```
+
+* Tests for Haversine function, API validation, sorting correctness, and integration tests for small datasets
+
+---
+
+## 7️⃣ AI Usage
+
+* Generated initial boilerplate code for API endpoints
+* Assisted in pair computation logic
+* Helped with documentation and SSE implementation
+
+---
+
+## 8️⃣ Bonus Features Implemented
+
+* Top 20 shortest pairs map view
+* CSV export of all pairs and top 20
+* Caching repeated requests by set-membership hash
+* Excel import/export
+* SSE live streaming
+* Map view also updates on CSV upload
+
+---
+
+## 9️⃣ Time Complexity Analysis
+
+| Operation                     | Complexity                 |
+| ----------------------------- | -------------------------- |
+| Pair generation (n countries) | O(n²)                      |
+| Sorting pairs                 | O(n² log n²) ≈ O(n² log n) |
+| SSE streaming                 | O(n²)                      |
+| Caching lookup                | O(1)                       |
+
+---
+
+## 10️⃣ Deployment
+
+* Public URL: [https://zifalla.ilaysschool.com/dashboard](https://zifalla.ilaysschool.com/dashboard)
+* Username: `ziffala@gmail.com`
+* Password: `ziffala@1234`
+* SSE and map features are fully functional on this deployment
 
 
-## Evaluation
 
-- Correctness. Sorted pairs, accurate distances.
-- Code quality. Clear, small modules, helpful tests.
-- Frontend UX. Fast, simple, accessible.
-- Realtime. Streams work and do not block the UI.
-- Deployment. Stable, public, and documented.
-
-
-Good luck. We’re looking for creativity, not perfection.  
-_Zifala Team_
